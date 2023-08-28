@@ -12,11 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from unittest.mock import ANY, patch
+import backoff
 from datetime import datetime
 from google.cloud import bigquery
 
 from bigquery import write_summarization_to_table
+
+
+_DATASET_ID = "summary_dataset"
+_TABLE_ID = "summary_table"
+_PROJECT_ID = os.environ["PROJECT_ID"]
 
 bucket = "fake-bucket"
 filename = "fake-file-name"
@@ -27,11 +34,29 @@ complete_text_uri = "fake-complete-text/uri/"
 timestamp = datetime.now()
 
 
-@patch.object(bigquery, "Client")
+# System/integration tests
+@backoff.on_exception(backoff.expo, Exception, max_tries=3)
+def test_write_summarization_to_table_system(capsys):
+    errors = write_summarization_to_table(
+        project_id=_PROJECT_ID,
+        dataset_id=_DATASET_ID,
+        table_id=_TABLE_ID,
+        bucket="gs://fake_bucket",
+        filename="fake.pdf",
+        complete_text="This is fake text of an academic paper",
+        complete_text_uri="gs://fake_bucket/texts/fake.txt",
+        summary="Some fake text summary",
+        summary_uri="gs://fake_bucket/fake-summary.txt",
+        timestamp=datetime.now(),
+    )
+
+    assert len(errors) == 0
+
+
+# Unit tests
 @patch.object(bigquery.Client, "insert_rows_json")
-def test_insert_rows_json(mock_insert_rows, mock_client):
+def test_insert_rows_json(mock_insert_rows):
     mock_insert_rows.return_value = []
-    mock_client().insert_rows_json = mock_insert_rows
 
     project_id = "project-name"
     dataset_id = "dataset-id"
@@ -85,7 +110,7 @@ def test_write_summarization_bad_inputs():
 
     # Assert
     assert len(errors) == 1
-    assert isinstance(errors[0], ValueError)
+    assert type(errors[0]) == ValueError
 
 
 def test_write_summarization_no_row_data():
@@ -96,4 +121,4 @@ def test_write_summarization_no_row_data():
 
     # Assert
     assert len(errors) == 1
-    assert isinstance(errors[0], ValueError)
+    assert type(errors[0]) == ValueError

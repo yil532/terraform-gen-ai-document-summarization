@@ -12,21 +12,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import backoff
+import datetime
+import os
 from unittest.mock import MagicMock, patch
 
 from google.cloud import storage
 from storage import upload_to_gcs
 
 
-@patch.object(storage, "Client")
+_BUCKET_NAME = os.environ["BUCKET"]
+_FILE_NAME = "system-test/fake.text"
+
+
+@backoff.on_exception(backoff.expo, Exception, max_tries=3)
+def test_upload_to_gcs():
+    want = datetime.datetime.now().isoformat()
+
+    upload_to_gcs(bucket=_BUCKET_NAME, name=_FILE_NAME, data=want)
+
+    client = storage.Client()
+    bucket = client.bucket(_BUCKET_NAME)
+    blob = bucket.blob(_FILE_NAME)
+    got = str(blob.download_as_text())
+    assert want in got
+
+
 @patch.object(storage.Client, "get_bucket")
-def test_upload_to_gcs_mock(mock_get_bucket, mock_client):
+def test_upload_to_gcs_mock(mock_get_bucket):
     mock_blob = MagicMock(spec=storage.Blob)
     mock_bucket = MagicMock(spec=storage.Bucket)
     mock_bucket.blob.return_value = mock_blob
     mock_get_bucket.return_value = mock_bucket
-    mock_client().get_bucket = mock_get_bucket
-
     bucket_name = "fake-bucket"
     blob_name = "fake-blob"
     data = "fake-data"
